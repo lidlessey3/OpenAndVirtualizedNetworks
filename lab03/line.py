@@ -7,11 +7,13 @@ if TYPE_CHECKING:
 
 class Line:
 
-    def __init__(self, label, length) -> None:
+    def __init__(self, label, length, channels : int) -> None:
         self.label = label
         self.length = length
         self.successive = {}
-        self.state = True
+        self.state = []
+        for i in range(0, channels):
+            self.state.append(True)
 
     def connect(self, begin, end) :
         self.successive["begin"] = begin
@@ -29,12 +31,12 @@ class Line:
         signal.inc_latency(self.latency_generation())
         self.successive["end"].propagate(signal)
 
-    def occupy(self) -> bool:
-        if(self.state):
-            self.state = False
+    def occupy(self, channel : int) -> bool:
+        if(self.state[channel]):
+            self.state[channel] = False
             return True
         return False
 
-    def free(self) -> None:
-        if (not self.state):
-            self.state = True
+    def free(self, channel : int) -> None:
+        if (not self.state[channel]):
+            self.state[channel] = True
