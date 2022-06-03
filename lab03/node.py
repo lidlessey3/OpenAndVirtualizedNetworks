@@ -10,6 +10,7 @@ class Node:
         self.label = data["label"]
         self.position = data["position"]
         self.connected_node = data["connected_nodes"]
+        self.transceiver = data['transceiver']
         self.successive = {}
 
     def get_position(self) :

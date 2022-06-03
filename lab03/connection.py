@@ -4,6 +4,8 @@ class Connection:
         self.input = input
         self.output = output
         self.signal_power = signal_power
+        self.channel = -1
+        self.bitRate = 0
         self.latency = 0.0
         self.snr = 0.0
     
@@ -12,3 +14,9 @@ class Connection:
     
     def setSNR(self, snr : float) -> None:
         self.snr = snr
+    
+    def setChannel(self, channel:int) -> None:
+        self.channel = channel
+
+    def setBitRate(self, bitRate) -> None:
+        self.bitRate = bitRate

@@ -32,6 +32,10 @@ class Network:
                 "position" : (value["position"][0],value["position"][1]),
                 "connected_nodes" : value["connected_nodes"]
             }
+            if("transceiver" not in value):
+                tmp_data['transceiver'] = "fixed-rate"
+            else:
+                tmp_data['transceiver'] = value['transceiver']
             self.nodes[key] = Node(tmp_data)
         for value in self.nodes.values():
             for end_l in value.connected_node:
@@ -39,7 +43,7 @@ class Network:
                 self.lines[value.label + end_l].connect(value, self.nodes[end_l])
                 value.addLine(self.lines[value.label + end_l], end_l)
         
-        self.create_weighted_paths()
+        self.create_weighted_paths_and_route_space()
 
     def recursive_path(self, start : str, end : str, forbidden : list, all_path : list) -> list:
         if(start == end):
@@ -77,40 +81,55 @@ class Network:
     def find_best_snr(self, begin : str, end : str) -> list:
         best = []
         best_snr = -1.0
+        best_channel = -1
         for path in self.find_paths(begin, end):
             sig = self.propagate(Signal_information(1e-3, path))
             if((sig.get_signal_noise_ration() < best_snr or best_snr == -1) and self.recursive_check_path(path, 0)):
                 best_snr = sig.get_signal_noise_ration()
                 if(len(best) != 0):
                     for i in range(0, len(best)-1):
-                        self.lines[best[i]+best[i+1]].free(self.last_channel)
+                        self.lines[best[i]+best[i+1]].free(best_channel)
                 best = list(path)
+                best_channel = self.last_channel
+        self.last_channel = best_channel
         return best
 
     def find_best_latency(self, begin : str, end : str) -> list:
         best = []
         best_snr = -1.0
+        best_channel = -1
         for path in self.find_paths(begin, end):
             sig = self.propagate(Signal_information(1e-3, path))
             if((float(sig.latency.real) < best_snr or best_snr == -1) and self.recursive_check_path(path, 0)):
                 best_snr = sig.latency.real
                 if(len(best) != 0):
                     for i in range(0, len(best)-1):
-                        self.lines[best[i]+best[i+1]].free(self.last_channel)
+                        self.lines[best[i]+best[i+1]].free(best_channel)
+                best_channel = self.last_channel
                 best = list(path)
+        self.last_channel = best_channel
         return best
 
     def stream(self, cons : list, to_use = lambda net,begin,end: net.find_best_latency(begin, end)):
         for con in cons:
             if(to_use):
                 path = self.find_best_latency(con.input, con.output)
+                con.setChannel(self.last_channel)
             else:
                 path = self.find_best_snr(con.input, con.output)
+                con.setChannel(self.last_channel)
             
             if(len(path)!=0):
-                sig = self.propagate(Signal_information(con.signal_power, path))
-                con.setLatency(sig.latency.real)
-                con.setSNR(sig.get_signal_noise_ration().real)
+                con.setBitRate(self.calculate_bit_rate(path, self.nodes[con.input].transceiver))
+                if(con.bitRate > 0):
+                    sig = self.propagate(Signal_information(con.signal_power, path))
+                    con.setLatency(sig.latency.real)
+                    con.setSNR(sig.get_signal_noise_ration().real)
+                else:
+                    for i in range(0, len(path)-1):
+                        self.lines[path[i]+path[i+1]].free(con.channel)
+                    con.setLatency(None)
+                    con.setSNR(0.0)
             else:
                 con.setLatency(None)
                 con.setSNR(0.0)
@@ -123,12 +142,10 @@ class Network:
                 tmp_s += "->"
         return tmp_s
 
-    def create_weighted_paths(self) -> None:
+    def create_weighted_paths_and_route_space(self) -> None:
         nodes=["A","B","C","D","E", "F"]
         labels_d = []
-        noises_d = []
-        latencies_d = []
-        snr_d = []
+        data = []
         for node_s in nodes:
             for node_e in nodes:
                 if(node_s != node_e):
@@ -136,18 +153,18 @@ class Network:
                     for path in paths:
                         sig = self.propagate(Signal_information(1e-3, path))
                         labels_d.append(self.path_to_string(path))
-                        noises_d.append(sig.noise_power.real)
-                        latencies_d.append(sig.latency.real)
-                        snr_d.append(sig.get_signal_noise_ration().real)
-        self.weighted_paths = DataFrame()
-        self.weighted_paths['label'] = labels_d
-        self.weighted_paths['noise'] = noises_d
-        self.weighted_paths['latency'] = latencies_d
-        self.weighted_paths['snr'] = snr_d
+                        data.append([self.path_to_string(path), sig.noise_power.real, sig.latency.real, sig.get_signal_noise_ration().real])
+        self.weighted_paths = DataFrame(data, columns=['label', 'noise', 'latency', 'snr'], index=labels_d)
+        data = []
+        for label in labels_d:
+            tmp=[]
+            for i in range(self.channels):
+                tmp.append(True)
+            data.append(tmp)
+        self.route_space = DataFrame(data, index=labels_d, columns=list(range(0, self.channels)))
 
     def calculate_bit_rate(self, path, strategy):
-        t = self.propagate(Lightpath(1e-9, path, 0))
-        snr = 10**(t.get_signal_noise_ration().real/10.0)
+        snr = 10**(self.weighted_paths.loc[self.path_to_string(path), 'snr']/10.0)
         return self.calculate_bit_rate_actual(snr, strategy)
 
     def calculate_bit_rate_actual(self, snr, strategy):
