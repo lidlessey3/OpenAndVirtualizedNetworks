@@ -28,7 +28,7 @@ class Signal_information:
         return self.signal_power
 
     def get_signal_noise_ration(self) ->float :
-        return 10 * (log10(self.signal_power) - log10(self.noise_power))
+        return 10 * (log10(self.signal_power.real) - log10(self.noise_power.real))
 
     def get_latency(self) -> float:
         return self.latency

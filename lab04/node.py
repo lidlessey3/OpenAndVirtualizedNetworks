@@ -25,4 +25,5 @@ class Node:
     def propagate(self, signal : Signal_information):
         next_node = signal.update_path()
         if(next_node in self.connected_node):
-            self.successive[next_node].propagate(signal)
+            signal.signal_power = self.successive[next_node].optimized_launch_power()   # set the optimized launch power of the signal
+            self.successive[next_node].propagate(signal)                                # for this line

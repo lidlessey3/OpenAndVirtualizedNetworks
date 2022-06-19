@@ -11,10 +11,7 @@ from segnale import Signal_information
 from connection import Connection
 from pandas import DataFrame
 import matplotlib.pyplot as plt
-
-BERT = 1e-3
-RS = 32e9
-BN = 12.5e9
+import constants as my_cs
 
 class Network:
     
@@ -65,7 +62,7 @@ class Network:
         self.nodes[node].propagate(signal)
         return signal
 
-    def recursive_check_path(self, path : list, pos : int, channel : int = 0) -> bool:
+    def recursive_check_path(self, path : list, pos : int, channel : int = 0) -> bool: # recursively checks if the path is free or not
         if(pos==len(path) - 1):
             return True
         if(self.lines[path[pos]+ path[pos+1]].occupy(channel)):
@@ -110,31 +107,31 @@ class Network:
         self.last_channel = best_channel
         return best
 
-    def stream(self, cons : list, to_use = lambda net,begin,end: net.find_best_latency(begin, end)):
+    def stream(self, cons : list, to_use = lambda net,begin,end: net.find_best_latency(begin, end)): # testes all the possible connections
         for con in cons:
-            if(to_use):
+            if(to_use): # depending on the best path selected I use the appropriate function
                 path = self.find_best_latency(con.input, con.output)
-                con.setChannel(self.last_channel)
+                con.setChannel(self.last_channel)       # set the channel of the connection to the last one check for inside the function
             else:
                 path = self.find_best_snr(con.input, con.output)
-                con.setChannel(self.last_channel)
+                con.setChannel(self.last_channel)       # set the channel of the connection to the last one check for inside the function
             
-            if(len(path)!=0):
-                con.setBitRate(self.calculate_bit_rate(path, self.nodes[con.input].transceiver))
-                if(con.bitRate > 0):
+            if(len(path)!=0):   # if a path was found
+                con.setBitRate(self.calculate_bit_rate(path, self.nodes[con.input].transceiver))    # calculate the bitrate using the first node technology
+                if(con.bitRate > 0):    # if the GSNR requirements are met
                     sig = self.propagate(Signal_information(con.signal_power, path))
                     con.setLatency(sig.latency.real)
                     con.setSNR(sig.get_signal_noise_ration().real)
-                else:
-                    for i in range(0, len(path)-1):
+                else:       # if the bitrate is 0 (GSNR requirements not met)
+                    for i in range(0, len(path)-1):     # free the line
                         self.lines[path[i]+path[i+1]].free(con.channel)
-                    con.setLatency(None)
+                    con.setLatency(None)    # and reject the connection
                     con.setSNR(0.0)
-            else:
+            else:   # if no path is found reject the connection
                 con.setLatency(None)
                 con.setSNR(0.0)
     
-    def path_to_string(self, path) -> str:
+    def path_to_string(self, path) -> str: # given a list of nodes it turns it into a string
         tmp_s = ""
         for node in path:
             tmp_s += node
@@ -142,7 +139,7 @@ class Network:
                 tmp_s += "->"
         return tmp_s
 
-    def create_weighted_paths_and_route_space(self) -> None:
+    def create_weighted_paths_and_route_space(self) -> None: # creates the weighted path and the route space
         nodes=["A","B","C","D","E", "F"]
         labels_d = []
         data = []
@@ -163,27 +160,27 @@ class Network:
             data.append(tmp)
         self.route_space = DataFrame(data, index=labels_d, columns=list(range(0, self.channels)))
 
-    def calculate_bit_rate(self, path, strategy):
-        snr = 10**(self.weighted_paths.loc[self.path_to_string(path), 'snr']/10.0)
-        return self.calculate_bit_rate_actual(snr, strategy)
+    def calculate_bit_rate(self, lightPath : Lightpath, strategy):
+        snr = 10**(self.weighted_paths.loc[self.path_to_string(lightPath.path), 'snr']/10.0)
+        return self.calculate_bit_rate_actual(snr, strategy, lightPath.Rs)
 
-    def calculate_bit_rate_actual(self, snr, strategy):
+    def calculate_bit_rate_actual(self, snr, strategy, rs = my_cs.RS): # depending on the stratefy calculates the speed depending on the snr
         if(strategy == 'fixed-rate'):
-            if(snr >= 2*sp.erfcinv(2 * BERT)**2 * RS/BN):
+            if(snr >= 2*sp.erfcinv(2 * my_cs.BERT)**2 *  rs/ my_cs.BN):
                 return 100e9
             else:
                 return 0
         elif(strategy == 'flex-rate'):
-            if(snr <= 2*sp.erfcinv(2 * BERT)**2 * RS/BN):
+            if(snr <= 2*sp.erfcinv(2 * my_cs.BERT)**2 *  rs/ my_cs.BN):
                 return 0
-            elif(snr <= 14.0/3.0*sp.erfcinv(3.0/2.0 * BERT)**2 * RS/BN):
+            elif(snr <= 14.0/3.0*sp.erfcinv(3.0/2.0 * my_cs.BERT)**2 *  rs/ my_cs.BN):
                 return 100e9
-            elif(snr <= 10.0*sp.erfcinv(8.0/3.0 * BERT)**2 * RS/BN):
+            elif(snr <= 10.0*sp.erfcinv(8.0/3.0 * my_cs.BERT)**2 *  rs/ my_cs.BN):
                 return 200e9
             else:
                 return 400e9
         elif(strategy == 'shannon'):
-            return 2*RS*np.log2(1.0+snr*RS/BN)
+            return 2* rs*np.log2(1.0+snr* rs/ my_cs.BN)
         else:
             return 0
 
