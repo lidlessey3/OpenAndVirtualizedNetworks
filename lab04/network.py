@@ -15,7 +15,7 @@ import constants as my_cs
 
 class Network:
     
-    def __init__(self, path : str, channels : int) -> None:
+    def __init__(self, path : str, channels : int = 10) -> None:
         input_file = open(path)
         data = json.load(input_file)
         input_file.close()
@@ -59,7 +59,7 @@ class Network:
 
     def propagate(self, signal: Signal_information) -> Signal_information:
         node = signal.update_path()
-        self.nodes[node].propagate(signal)
+        self.nodes[node].propagate(signal, True)
         return signal
 
     def recursive_check_path(self, path : list, pos : int, channel : int = 0) -> bool: # recursively checks if the path is free or not
@@ -81,7 +81,7 @@ class Network:
         best_channel = -1
         for path in self.find_paths(begin, end):
             sig = self.propagate(Signal_information(1e-3, path))
-            if((sig.get_signal_noise_ration() < best_snr or best_snr == -1) and self.recursive_check_path(path, 0)):
+            if((sig.get_signal_noise_ration().real < best_snr.real or best_snr == -1) and self.recursive_check_path(path, 0)):
                 best_snr = sig.get_signal_noise_ration()
                 if(len(best) != 0):
                     for i in range(0, len(best)-1):
@@ -117,7 +117,7 @@ class Network:
                 con.setChannel(self.last_channel)       # set the channel of the connection to the last one check for inside the function
             
             if(len(path)!=0):   # if a path was found
-                con.setBitRate(self.calculate_bit_rate(path, self.nodes[con.input].transceiver))    # calculate the bitrate using the first node technology
+                con.setBitRate(self.calculate_bit_rate(Lightpath(con.signal_power, path, con.channel), self.nodes[con.input].transceiver))    # calculate the bitrate using the first node technology
                 if(con.bitRate > 0):    # if the GSNR requirements are met
                     sig = self.propagate(Signal_information(con.signal_power, path))
                     con.setLatency(sig.latency.real)
@@ -219,4 +219,33 @@ if __name__=="__main__":
 
     plt.show()
 
+    plt.hist(list(map(lambda x:x.bitRate, cons)), bins=2)
+    print(list(map(lambda x:x.bitRate, cons)))
+    plt.show()
+
+    fixedRateNet = Network("lab04/nodes_full_fixed_rate.json")
+    flexRateNet = Network("lab04/nodes_full_flex_rate.json")
+    shannonNet = Network("lab04/nodes_full_shannon.json")
+
+    fixedCons = []
+    for i in range(0,100):
+        s = floor(random.uniform(0, len(nodes)))
+        e = floor(random.uniform(0, len(nodes)))
+        while e == s:
+            e = floor(random.uniform(0, len(nodes)))
+        fixedCons.append(Connection(nodes[s], nodes[e], 1e-3))
+
+    flexCons = list(fixedCons)
+    shannonCons = list(fixedCons)
+
+    fixedRateNet.stream(fixedCons, False)
+    #flexRateNet.stream(flexCons, False)
+    #shannonNet.stream(shannonCons, False)
+
+    plt.hist(list(map(lambda x:x.bitRate, fixedCons)), bins=2)
+    print(list(map(lambda x:x.bitRate, fixedCons)))
+    plt.show()
+
+    # beggining the creation of the traffic matrix
+    T = np.zeros((len(net.nodes), len(net.nodes)))  # create an empty matrix
 

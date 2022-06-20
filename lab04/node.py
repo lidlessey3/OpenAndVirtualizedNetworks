@@ -22,8 +22,9 @@ class Node:
     def addLine(self, line, dest : str) -> None:
         self.successive[dest] = line
     
-    def propagate(self, signal : Signal_information):
+    def propagate(self, signal : Signal_information, set_pow : bool = False):
         next_node = signal.update_path()
         if(next_node in self.connected_node):
-            signal.signal_power = self.successive[next_node].optimized_launch_power()   # set the optimized launch power of the signal
+            if(set_pow):
+                signal.signal_power = self.successive[next_node].optimized_launch_power()   # set the optimized launch power of the signal
             self.successive[next_node].propagate(signal)                                # for this line

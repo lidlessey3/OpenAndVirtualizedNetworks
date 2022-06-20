@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 class Line:
     gain = 16 #dB
     noise_figure = 3 #dB
-    alpha = 0.2e-3 / (10*np.log10(cs.e)) #dB/m this a 10 or a 20? To ask later
+    alpha = 0.2e-3 #/ (10*np.log10(cs.e)) #dB/m this a 10 or a 20? To ask later
     module_beta = 2.13e-26 #1/(m * Hz^2)
     gamma = 1.27e-3 # 1/(m*W)
     Rs = 32e9 # Hz
@@ -40,6 +40,8 @@ class Line:
     """
 
     def noise_generation(self, signal_power : float) -> float:
+        ase = self.ase_generation()
+        nli = self.nli_generation(signal_power)
         return self.ase_generation() + self.nli_generation(signal_power)
 
     def latency_generation(self) -> float:
@@ -71,20 +73,22 @@ class Line:
             return i
 
     def ase_generation(self):
-        ase = self.n_amplifiers * (cs.h * my_cs.BN * self.noise_figure * (self.gain - 1) * self.f)
+        ase = self.n_amplifiers * (cs.h * my_cs.BN * 10**(self.noise_figure/10) * (10**(self.gain/10) - 1) * self.f)
         return ase
 
     def nli_generation(self, signal_power):
-        nli = signal_power**3 *  self.calculate_NLI_coeff() * my_cs.BN * self.n_amplifiers
+        nli = signal_power**3 *  self.calculate_NLI_coeff() * my_cs.BN * 10**(-self.alpha * self.length/10) * 10**(self.gain/10) #np.abs(self.alpha / (10 * np.log10(cs.e))) * 80e3
         return nli
 
     def optimized_launch_power(self) -> float: # slide 31 of OLS(8)
-        l = 1/self.alpha
-        return (l*self.noise_figure*(cs.h * my_cs.BN * self.f) / (2*my_cs.BN*self.calculate_NLI_coeff()))**(1/3)
+        #return 1e-3
+        l = np.abs(20 * np.log10(cs.e)/ self.alpha)
+        return (80e3*self.noise_figure*(cs.h * my_cs.BN * self.f) / (2*my_cs.BN*self.calculate_NLI_coeff()))**(1/3)
     
     def calculate_NLI_coeff(self) -> float: # slide 16 of OLS(8)
         if (self.NLI_coeff == -1):  # since this number does not change do the calculation only once
-            log_arg = cs.pi**2 * self.module_beta * self.Rs**2 * len(self.state)**(2 * self.Rs/self.df)/(2* self.alpha)  # argument of log
-            factor = 16/(27 * cs.pi) * self.gamma**2 / (4 * self.alpha * self.module_beta * self.Rs**3)     # the other factor
+            alpha = np.abs(self.alpha / (10 * np.log10(cs.e)))
+            log_arg = cs.pi**2 * self.module_beta * self.Rs**2 * len(self.state)**(2 * self.Rs/self.df)/(2* alpha)  # argument of log
+            factor = 16/(27 * cs.pi) * self.gamma**2 / (4 * alpha * self.module_beta * self.Rs**3)     # the other factor
             self.NLI_coeff =  factor * np.log(log_arg)
         return self.NLI_coeff

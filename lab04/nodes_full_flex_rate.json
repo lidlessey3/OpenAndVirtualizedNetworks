@@ -5,7 +5,7 @@
    "C",
    "D"
   ],
-  "transceiver": "flex_rate", 
+  "transceiver": "flex-rate", 
   "position": [
    -350e3,
    150e3
@@ -17,7 +17,7 @@
    "D",
    "F"
   ],
-  "transceiver": "flex_rate",
+  "transceiver": "flex-rate",
   "position": [
    -100e3,
    400e3
@@ -29,7 +29,7 @@
    "D",
    "E"
   ],
-  "transceiver": "flex_rate",
+  "transceiver": "flex-rate",
   "position": [
    -200e3,
    -300e3
@@ -43,7 +43,7 @@
    "E",
    "F"
   ],
-  "transceiver": "flex_rate",
+  "transceiver": "flex-rate",
   "position": [
    0,
    0
@@ -55,7 +55,7 @@
    "D",
    "F"
   ],
-  "transceiver": "flex_rate",
+  "transceiver": "flex-rate",
   "position": [
    150e3,
    -350e3
@@ -67,7 +67,7 @@
    "D",
    "E"
   ],
-  "transceiver": "flex_rate",
+  "transceiver": "flex-rate",
   "position": [
    300e3,
    250e3
