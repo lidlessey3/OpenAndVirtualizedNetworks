@@ -52,6 +52,16 @@ class Network:
                 self.recursive_path(next_node, end, forbidden, all_path)
                 forbidden.pop()
 
+    def draw_network(self) -> None: # draws the network on screen
+        fig, graph = plt.subplots()
+        graph.scatter([node.position[0] for node in self.nodes.values()], [node.position[1] for node in self.nodes.values()]) # draw the nodes
+        for point, name in zip([node.position for node in self.nodes.values()], [label for label in self.nodes.keys()]): # add the labels
+                graph.annotate(name, xy=point, xytext=(0, -10), textcoords='offset points',
+                color='blue', ha='center', va='center')
+        for line in self.lines.values():    # draw the lines
+            graph.plot([node.position[0] for node in line.successive.values()], [node.position[1] for node in line.successive.values()])
+        plt.show()
+
     def find_paths(self, start : str, end : str)->list:
         result=[]
         self.recursive_path(start, end, [start], result)
@@ -192,6 +202,7 @@ def calculate_average_speed(speeds : list) -> float:
 
 if __name__=="__main__":
     net=Network("lab04/269609.json", 10)
+    net.draw_network()
     nodes=list(net.nodes.keys())
     cons = []
     for i in range(0,100):
