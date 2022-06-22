@@ -140,7 +140,7 @@ class Network:
         return tmp_s
 
     def create_weighted_paths_and_route_space(self) -> None: # creates the weighted path and the route space
-        nodes=["A","B","C","D","E", "F"]
+        nodes=list(self.nodes.keys())
         labels_d = []
         data = []
         for node_s in nodes:
@@ -184,9 +184,15 @@ class Network:
         else:
             return 0
 
+def calculate_average_speed(speeds : list) -> float:
+    result = 0.0
+    for speed in speeds:
+        result+=speed
+    return result/len(speeds)
+
 if __name__=="__main__":
-    net=Network("lab02/nodes.json", 10)
-    nodes=["A","B","C","D","E", "F"]
+    net=Network("lab04/269609.json", 10)
+    nodes=list(net.nodes.keys())
     cons = []
     for i in range(0,100):
         s = floor(random.uniform(0, len(nodes)))
@@ -205,28 +211,27 @@ if __name__=="__main__":
     speed_fixed_a = []
     speed_flex_a = []
     speed_shannon_a = []
-    for k in range(0,20):
+    for k in range(-20,40):
         db_a.append(k)
         snr = 10**(k/10.0)
         speed_fixed_a.append(net.calculate_bit_rate_actual(snr, "fixed-rate")/1e9)
         speed_flex_a.append(net.calculate_bit_rate_actual(snr, "flex-rate")/1e9)
         speed_shannon_a.append(net.calculate_bit_rate_actual(snr, "shannon")/1e9)
     fig, plot_speed = plt.subplots()
-    plot_speed.plot(db_a)
-    plot_speed.plot(speed_fixed_a)
-    plot_speed.plot(speed_flex_a)
-    plot_speed.plot(speed_shannon_a)
+    plot_speed.plot(db_a, speed_fixed_a)
+    plot_speed.plot(db_a, speed_flex_a)
+    plot_speed.plot(db_a, speed_shannon_a)
 
     plt.show()
 
     plt.hist(list(map(lambda x:x.bitRate, cons)), bins=2)
-    print(list(map(lambda x:x.bitRate, cons)))
     plt.show()
 
     fixedRateNet = Network("lab04/nodes_full_fixed_rate.json")
     flexRateNet = Network("lab04/nodes_full_flex_rate.json")
     shannonNet = Network("lab04/nodes_full_shannon.json")
 
+    nodes = list(fixedRateNet.nodes.keys())
     fixedCons = []
     for i in range(0,100):
         s = floor(random.uniform(0, len(nodes)))
@@ -235,17 +240,43 @@ if __name__=="__main__":
             e = floor(random.uniform(0, len(nodes)))
         fixedCons.append(Connection(nodes[s], nodes[e], 1e-3))
 
-    flexCons = list(fixedCons)
-    shannonCons = list(fixedCons)
+    flexCons = []
+    for i in range(0,100):
+        s = floor(random.uniform(0, len(nodes)))
+        e = floor(random.uniform(0, len(nodes)))
+        while e == s:
+            e = floor(random.uniform(0, len(nodes)))
+        flexCons.append(Connection(nodes[s], nodes[e], 1e-3))
+
+    shannonCons = []
+    for i in range(0,100):
+        s = floor(random.uniform(0, len(nodes)))
+        e = floor(random.uniform(0, len(nodes)))
+        while e == s:
+            e = floor(random.uniform(0, len(nodes)))
+        shannonCons.append(Connection(nodes[s], nodes[e], 1e-3))
 
     fixedRateNet.stream(fixedCons, False)
-    #flexRateNet.stream(flexCons, False)
-    #shannonNet.stream(shannonCons, False)
+    flexRateNet.stream(flexCons, False)
+    shannonNet.stream(shannonCons, False)
 
     plt.hist(list(map(lambda x:x.bitRate, fixedCons)), bins=2)
-    print(list(map(lambda x:x.bitRate, fixedCons)))
     plt.show()
 
-    # beggining the creation of the traffic matrix
-    T = np.zeros((len(net.nodes), len(net.nodes)))  # create an empty matrix
+    plt.hist(list(map(lambda x:x.bitRate, flexCons)), bins=4)
+    plt.show()
 
+    plt.hist(list(map(lambda x:x.bitRate, shannonCons)), bins=20)
+    plt.show()
+
+    # only maintain accepted connections
+    fixedCons = [con for con in fixedCons if con.bitRate > 0]
+    flexCons = [con for con in flexCons if con.bitRate > 0]
+    shannonCons = [con for con in shannonCons if con.bitRate > 0]
+
+    print("Average value for fixed transceivers is: " + str(calculate_average_speed([con.bitRate for con in fixedCons])))
+    print("Average value for flex transceivers is: " + str(calculate_average_speed([con.bitRate for con in flexCons])))
+    print("Average value for shannon transceivers is: " + str(calculate_average_speed([con.bitRate for con in shannonCons])))
+
+    # begging the creation of the traffic matrix
+    T = np.zeros((len(net.nodes), len(net.nodes)))  # create an empty matrix
