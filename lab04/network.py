@@ -144,9 +144,35 @@ class Network:
                         self.lines[path[i]+path[i+1]].free(con.channel)
                     con.setLatency(None)    # and reject the connection
                     con.setSNR(0.0)
+                    con.setPath(path)
+
+                    self.update_route_space(con)
+                    self.update_logger(con)
             else:   # if no path is found reject the connection
                 con.setLatency(None)
                 con.setSNR(0.0)
+
+    def update_route_space(self, con : Connection) -> None:
+        self.route_space.loc[self.path_to_string(con.path), con.channel] = False
+        subPaths = []
+        self.recursive_generate_sub_paths(con.path, subPaths)
+        for path in subPaths:
+            self.update_route_space.loc[self.path_to_string(path), con.channel] = False
+        
+    def recursive_generate_sub_paths(self, path : list, total : list) ->None:
+        if(len(path) == 2):
+            return
+        path = list(path)
+        tmp = path[-1]
+        del path[-1]
+        total.append(list(path))
+        self.recursive_generate_sub_paths(path, total)
+        path.append(tmp)
+        tmp = path[0]
+        del path[0]
+        total.append(list(path))
+        self.recursive_generate_sub_paths(path, total)
+        return
     
     def path_to_string(self, path) -> str: # given a list of nodes it turns it into a string
         tmp_s = ""
