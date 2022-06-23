@@ -1,8 +1,8 @@
 from cmath import sqrt
 import json
 from math import floor
-from platform import node
 import random
+from unittest import result
 import numpy as np
 import scipy.special as sp
 from lightpath import Lightpath
@@ -23,6 +23,7 @@ class Network:
         self.nodes = {}
         self.lines = {}
         self.channels = channels
+        self.time = 0
         
         for key,value in data.items():
             tmp_data = {
@@ -47,7 +48,10 @@ class Network:
         self.logger = DataFrame(index=["epoch time", "path", "Channel ID", "bit rate"])
 
     def update_logger(self, con : Connection) -> None:
-        self.logger.append([random.uniform(0, 100), self.path_to_string(con.path), con.channel, con.bitRate]) # add the line to the panda data frame
+        time = self.time# current time
+        self.time+=1    # advance the time
+        new_data={"epoch time":time, "path":self.path_to_string(con.path), "Channel ID":con.channel, "bit rate":con.bitRate}
+        self.logger.append(new_data) # add the line to the panda data frame
 
     def recursive_path(self, start : str, end : str, forbidden : list, all_path : list) -> list:
         if(start == end):
@@ -124,7 +128,7 @@ class Network:
         self.last_channel = best_channel
         return best
 
-    def stream(self, cons : list, to_use = lambda net,begin,end: net.find_best_latency(begin, end)): # testes all the possible connections
+    def stream(self, cons : list, to_use = True): # testes all the possible connections
         for con in cons:
             if(to_use): # depending on the best path selected I use the appropriate function
                 path = self.find_best_latency(con.input, con.output)
@@ -258,7 +262,41 @@ class Network:
         self.lines[line].beBrocken()
 
     def traffic_recovery(self) -> None:
-        pass # kill me how is this supposed to work I not understand :(
+        for t in range(self.time):
+            row = self.logger.loc[row["epoch time"] == t]
+
+            if(len(row) == 0):  # if this row was already damaged and recovered I skip it
+                break
+
+            path = row["path"].split("->")  # from string to path list
+            
+            # now confirming that the path is still valid
+            result = True
+            for i in range(len(path) - 1):
+                if(not self.lines[path[i]+path[i+1]].in_service):   # if a line is broken I signal it
+                    result = False
+
+            if(not result): # if there is a mismatch I must correct it
+                # first I free the channel and the route space
+                for i in range(len(path) - 1):
+                    self.lines[path[i]+path[i+1]].free(row["Channel ID"])   # free that channel
+                
+                # now for the route space
+                self.route_space.loc[self.path_to_string(path), row["Channel ID"]] = True
+
+                subPaths = []
+                self.recursive_generate_sub_paths(path, subPaths)
+                for subPath in subPaths:
+                    self.route_space.loc[self.path_to_string(subPath), row["Channel ID"]] = True
+
+                # now creating the new connection to satisfy the same bitrate demand
+                labels = [label for label in self.nodes.keys()]
+                Tm = np.zeros((len(self.nodes), len(self.nodes)))
+
+                Tm[labels.index(path[0]), labels.index(path[-1])] = row["bit rate"] # same bitrate demand as previously allocated
+                self.manageTrafficMatrix(Tm)
+
+                self.logger.drop(row.index, inplace=True)   # remove the line after it has been fixed
 
 def calculate_average_speed(speeds : list) -> float:
     result = 0.0
@@ -359,7 +397,7 @@ if __name__=="__main__":
 
     net=Network("lab04/269609.json", 10) # resetting the network
 
-    M = 4
+    M = 1
 
     Tm = np.full((len(net.nodes), len(net.nodes)), 100e9 * M)  # create an empty matrix
     np.fill_diagonal(Tm, 0.0)
