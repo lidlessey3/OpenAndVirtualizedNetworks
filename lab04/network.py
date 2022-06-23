@@ -143,15 +143,15 @@ class Network:
                     sig = self.propagate(Signal_information(con.signal_power, path))
                     con.setLatency(sig.latency.real)
                     con.setSNR(sig.get_signal_noise_ration().real)
+
+                    self.update_route_space(con)    # update route space
+                    self.update_logger(con)         # update logger
                 else:       # if the bitrate is 0 (GSNR requirements not met)
                     for i in range(0, len(path)-1):     # free the line
                         self.lines[path[i]+path[i+1]].free(con.channel)
                     con.setLatency(None)    # and reject the connection
                     con.setSNR(0.0)
                     con.setPath(path)
-
-                    self.update_route_space(con)
-                    self.update_logger(con)
             else:   # if no path is found reject the connection
                 con.setLatency(None)
                 con.setSNR(0.0)
