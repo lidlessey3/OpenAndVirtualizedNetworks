@@ -42,6 +42,12 @@ class Network:
                 value.addLine(self.lines[value.label + end_l], end_l)
         
         self.create_weighted_paths_and_route_space()
+        
+        #creating a logger
+        self.logger = DataFrame(index=["epoch time", "path", "Channel ID", "bit rate"])
+
+    def update_logger(self, con : Connection) -> None:
+        self.logger.append([random.uniform(0, 100), self.path_to_string(con.path), con.channel, con.bitRate]) # add the line to the panda data frame
 
     def recursive_path(self, start : str, end : str, forbidden : list, all_path : list) -> list:
         if(start == end):
