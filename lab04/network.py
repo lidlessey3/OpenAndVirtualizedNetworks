@@ -1,6 +1,7 @@
 from cmath import sqrt
 import json
 from math import floor
+from platform import node
 import random
 import numpy as np
 import scipy.special as sp
@@ -194,6 +195,34 @@ class Network:
         else:
             return 0
 
+    def manageTrafficMatrix(self, Tm) -> None:
+        while((Tm != np.zeros((len(self.nodes), len(self.nodes)))).any()): # while there is at least some request left
+            nodes=[0,0]
+            while(Tm[nodes[0], int(nodes[1])] <= 0):    # select random nodes
+                nodes[0] = random.randint(0, len(self.nodes) - 1)
+                nodes[1] = random.randint(0, len(self.nodes) - 1)
+            
+            #convert to the string name for creating the connection
+
+            tmp = [label for label in self.nodes.keys()]
+
+            begin = tmp[nodes[0]]
+            end = tmp[nodes[1]]
+
+            # creating the connection
+            con = Connection(begin, end, 1e-3)
+
+            # streaming until the required traffic is allocated
+            self.stream([con], True)
+            while(con.bitRate <= Tm[nodes[0], nodes[1]]):
+                Tm[nodes[0], nodes[1]] -= con.bitRate
+                if(con.bitRate == 0):   # if the connection is refused terminate
+                    return
+                self.stream([con], True)
+            if(Tm[nodes[0], nodes[1]] > 0):
+                Tm[nodes[0], nodes[1]] = 0
+
+
 def calculate_average_speed(speeds : list) -> float:
     result = 0.0
     for speed in speeds:
@@ -290,4 +319,13 @@ if __name__=="__main__":
     print("Average value for shannon transceivers is: " + str(calculate_average_speed([con.bitRate for con in shannonCons])))
 
     # begging the creation of the traffic matrix
-    T = np.zeros((len(net.nodes), len(net.nodes)))  # create an empty matrix
+
+    net=Network("lab04/269609.json", 10) # resetting the network
+
+    M = 4
+
+    Tm = np.full((len(net.nodes), len(net.nodes)), 100e9 * M)  # create an empty matrix
+    np.fill_diagonal(Tm, 0.0)
+
+    net.manageTrafficMatrix(Tm)
+    print(Tm)

@@ -14,8 +14,10 @@ if TYPE_CHECKING:
 class Line:
     gain = 16 #dB
     noise_figure = 3 #dB
+    #noise_figure = 5 # alternative value
     alpha = 0.2e-3 #/ (10*np.log10(cs.e)) #dB/m this a 10 or a 20? To ask later
     module_beta = 2.13e-26 #1/(m * Hz^2)
+    #module_beta = 0.6e-26 # alternative value
     gamma = 1.27e-3 # 1/(m*W)
     Rs = 32e9 # Hz
     df = 50e9 # Hz
