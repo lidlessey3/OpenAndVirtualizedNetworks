@@ -45,13 +45,13 @@ class Network:
         self.create_weighted_paths_and_route_space()
         
         #creating a logger
-        self.logger = DataFrame(index=["epoch time", "path", "Channel ID", "bit rate"])
+        self.logger = DataFrame(columns=["epoch time", "path", "Channel ID", "bit rate"])
 
     def update_logger(self, con : Connection) -> None:
         time = self.time# current time
         self.time+=1    # advance the time
         new_data={"epoch time":time, "path":self.path_to_string(con.path), "Channel ID":con.channel, "bit rate":con.bitRate}
-        self.logger.append(new_data) # add the line to the panda data frame
+        self.logger.loc[time] = new_data # add the line to the panda data frame
 
     def recursive_path(self, start : str, end : str, forbidden : list, all_path : list) -> list:
         if(start == end):
@@ -86,7 +86,10 @@ class Network:
     def recursive_check_path(self, path : list, pos : int, channel : int = 0) -> bool: # recursively checks if the path is free or not
         if(pos==len(path) - 1):
             return True
-        if(self.lines[path[pos]+ path[pos+1]].occupy(channel) and self.lines[path[pos]+ path[pos+1]].in_service): # check channel availability and that the line be in service
+        if(self.lines[path[pos]+ path[pos+1]].occupy(channel)): # check channel availability
+            if( not self.lines[path[pos]+ path[pos+1]].in_service):
+                self.lines[path[pos]+ path[pos+1]].free(channel)
+                return False
             if(self.recursive_check_path(path, pos + 1, channel)):
                 self.last_channel = channel
                 return True
@@ -102,7 +105,7 @@ class Network:
         best_channel = -1
         for path in self.find_paths(begin, end):
             sig = self.propagate(Signal_information(1e-3, path))
-            if((sig.get_signal_noise_ration().real < best_snr.real or best_snr == -1) and self.recursive_check_path(path, 0)):
+            if((sig.get_signal_noise_ration().real > best_snr.real or best_snr == -1) and self.recursive_check_path(path, 0)):
                 best_snr = sig.get_signal_noise_ration()
                 if(len(best) != 0):
                     for i in range(0, len(best)-1):
@@ -161,7 +164,7 @@ class Network:
         subPaths = []
         self.recursive_generate_sub_paths(con.path, subPaths)
         for path in subPaths:   # and then in all the subpath possible
-            self.update_route_space.loc[self.path_to_string(path), con.channel] = False
+            self.route_space.loc[self.path_to_string(path), con.channel] = False
         
     def recursive_generate_sub_paths(self, path : list, total : list) ->None:
         if(len(path) == 2):
@@ -249,12 +252,12 @@ class Network:
             con = Connection(begin, end, 1e-3)
 
             # streaming until the required traffic is allocated
-            self.stream([con], True)
-            while(con.bitRate <= Tm[nodes[0], nodes[1]]):
+            self.stream([con], False)
+            while(con.bitRate < Tm[nodes[0], nodes[1]]):
                 Tm[nodes[0], nodes[1]] -= con.bitRate
                 if(con.bitRate == 0):   # if the connection is refused terminate
                     return
-                self.stream([con], True)
+                self.stream([con], False)
             if(Tm[nodes[0], nodes[1]] > 0):
                 Tm[nodes[0], nodes[1]] = 0
 
@@ -263,12 +266,12 @@ class Network:
 
     def traffic_recovery(self) -> None:
         for t in range(self.time):
-            row = self.logger.loc[row["epoch time"] == t]
+            row = self.logger.loc[self.logger["epoch time"] == t]
 
             if(len(row) == 0):  # if this row was already damaged and recovered I skip it
                 break
 
-            path = row["path"].split("->")  # from string to path list
+            path = str(row["path"].iloc[0]).split("->")  # from string to path list
             
             # now confirming that the path is still valid
             result = True
@@ -279,22 +282,28 @@ class Network:
             if(not result): # if there is a mismatch I must correct it
                 # first I free the channel and the route space
                 for i in range(len(path) - 1):
-                    self.lines[path[i]+path[i+1]].free(row["Channel ID"])   # free that channel
+                    self.lines[path[i]+path[i+1]].free(row["Channel ID"].iloc[0])   # free that channel
                 
                 # now for the route space
-                self.route_space.loc[self.path_to_string(path), row["Channel ID"]] = True
+                self.route_space.loc[self.path_to_string(path), row["Channel ID"].iloc[0]] = True
 
                 subPaths = []
                 self.recursive_generate_sub_paths(path, subPaths)
                 for subPath in subPaths:
-                    self.route_space.loc[self.path_to_string(subPath), row["Channel ID"]] = True
+                    self.route_space.loc[self.path_to_string(subPath), row["Channel ID"].iloc[0]] = True
 
                 # now creating the new connection to satisfy the same bitrate demand
                 labels = [label for label in self.nodes.keys()]
                 Tm = np.zeros((len(self.nodes), len(self.nodes)))
 
-                Tm[labels.index(path[0]), labels.index(path[-1])] = row["bit rate"] # same bitrate demand as previously allocated
+                Tm[labels.index(path[0]), labels.index(path[-1])] = row["bit rate"].iloc[0] # same bitrate demand as previously allocated
                 self.manageTrafficMatrix(Tm)
+
+                if((Tm == np.zeros((len(self.nodes), len(self.nodes)))).all()):
+                    print("Successufully reconected " + row["path"].iloc[0] + " usign " + self.logger.loc[self.time-1, "path"]+ ".")
+                    print("Using channel " + str(self.logger.loc[self.time-1, "Channel ID"]))
+                else:
+                    print("Failed to reconnect " + row["path"].iloc[0])
 
                 self.logger.drop(row.index, inplace=True)   # remove the line after it has been fixed
 
@@ -304,12 +313,19 @@ def calculate_average_speed(speeds : list) -> float:
         result+=speed
     return result/len(speeds)
 
+def count_false(status : list) -> int:
+    result = 0
+    for s in status:
+        if not s:
+            result+=1
+    return result
+
 if __name__=="__main__":
     net=Network("lab04/269609.json", 10)
     net.draw_network()
     nodes=list(net.nodes.keys())
     cons = []
-    for i in range(0,100):
+    for i in range(0,80):
         s = floor(random.uniform(0, len(nodes)))
         e = floor(random.uniform(0, len(nodes)))
         while e == s:
@@ -318,7 +334,7 @@ if __name__=="__main__":
     net.stream(cons)
     fig, [plot_latency, plot_snr] = plt.subplots(2)
     plot_latency.plot(list(map(lambda x:x.latency, cons)))
-    plot_snr.plot(range(0,100), list(map(lambda x:x.snr, cons)))
+    plot_snr.plot(list(map(lambda x:x.snr, cons)))
 
     plt.show()
 
@@ -397,7 +413,7 @@ if __name__=="__main__":
 
     net=Network("lab04/269609.json", 10) # resetting the network
 
-    M = 6
+    M = 2.8
 
     #Tm = np.full((len(net.nodes), len(net.nodes)), 100e9 * M)  # create an empty matrix
     Tm = np.random.randn(len(net.nodes)**2) * 100e9 * M
@@ -408,3 +424,17 @@ if __name__=="__main__":
 
     net.manageTrafficMatrix(Tm)
     print(Tm)
+
+    best = None
+
+    for line in net.lines.values():
+        if best is None:
+            best = line
+        elif (count_false(line.state) > count_false(best.state)):
+            best = line
+    
+    net.strong_failure(best.label)
+
+    print("Breaking line " + best.label)
+
+    net.traffic_recovery()

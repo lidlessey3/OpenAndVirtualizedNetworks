@@ -63,6 +63,7 @@ class Line:
         return False
 
     def free(self, channel : int) -> None:
+        channel = int(channel)
         if (not self.state[channel]):
             self.state[channel] = True
 
