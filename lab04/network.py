@@ -156,11 +156,11 @@ class Network:
                 con.setLatency(None)
                 con.setSNR(0.0)
 
-    def update_route_space(self, con : Connection) -> None:
-        self.route_space.loc[self.path_to_string(con.path), con.channel] = False
+    def update_route_space(self, con : Connection) -> None: # updates the routed space to allow for the connection
+        self.route_space.loc[self.path_to_string(con.path), con.channel] = False    # first here
         subPaths = []
         self.recursive_generate_sub_paths(con.path, subPaths)
-        for path in subPaths:
+        for path in subPaths:   # and then in all the subpath possible
             self.update_route_space.loc[self.path_to_string(path), con.channel] = False
         
     def recursive_generate_sub_paths(self, path : list, total : list) ->None:
@@ -397,10 +397,14 @@ if __name__=="__main__":
 
     net=Network("lab04/269609.json", 10) # resetting the network
 
-    M = 1
+    M = 6
 
-    Tm = np.full((len(net.nodes), len(net.nodes)), 100e9 * M)  # create an empty matrix
+    #Tm = np.full((len(net.nodes), len(net.nodes)), 100e9 * M)  # create an empty matrix
+    Tm = np.random.randn(len(net.nodes)**2) * 100e9 * M
+    Tm[Tm < 0] = 0
+    Tm = np.reshape(Tm, (len(net.nodes), len(net.nodes)))
     np.fill_diagonal(Tm, 0.0)
+    print(Tm)
 
     net.manageTrafficMatrix(Tm)
     print(Tm)

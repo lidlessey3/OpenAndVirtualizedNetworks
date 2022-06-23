@@ -68,7 +68,7 @@ class Line:
 
     def getFreeChannel(self) -> int: # will return the first available channel or -1 if there are none, and will call occupy on it
         i = 0
-        while(i <= len(self.state) and not self.occupy(i)):
+        while(i < len(self.state) and not self.occupy(i)):
             i+=1
         if(i == len(self.state)):
             return -1
