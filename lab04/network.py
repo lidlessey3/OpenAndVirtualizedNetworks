@@ -82,7 +82,7 @@ class Network:
     def recursive_check_path(self, path : list, pos : int, channel : int = 0) -> bool: # recursively checks if the path is free or not
         if(pos==len(path) - 1):
             return True
-        if(self.lines[path[pos]+ path[pos+1]].occupy(channel)):
+        if(self.lines[path[pos]+ path[pos+1]].occupy(channel) and self.lines[path[pos]+ path[pos+1]].in_service): # check channel availability and that the line be in service
             if(self.recursive_check_path(path, pos + 1, channel)):
                 self.last_channel = channel
                 return True
@@ -254,6 +254,11 @@ class Network:
             if(Tm[nodes[0], nodes[1]] > 0):
                 Tm[nodes[0], nodes[1]] = 0
 
+    def strong_failure(self, line : str) -> None:
+        self.lines[line].beBrocken()
+
+    def traffic_recovery(self) -> None:
+        pass # kill me how is this supposed to work I not understand :(
 
 def calculate_average_speed(speeds : list) -> float:
     result = 0.0

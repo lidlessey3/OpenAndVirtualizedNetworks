@@ -29,6 +29,7 @@ class Line:
         self.length = length
         self.successive = {}
         self.state = []
+        self.in_service = True
         for i in range(0, channels):
             self.state.append(True)
         self.n_amplifiers = floor(self.length.real / 80e3.real) + 2 #an amplifier every 80km plus the ones at the beginning and end of the line
@@ -94,3 +95,6 @@ class Line:
             factor = 16/(27 * cs.pi) * self.gamma**2 / (4 * alpha * self.module_beta * self.Rs**3)     # the other factor
             self.NLI_coeff =  factor * np.log(log_arg)
         return self.NLI_coeff
+
+    def beBrocken(self) -> None:
+        self.in_service = False
