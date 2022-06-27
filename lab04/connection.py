@@ -8,6 +8,7 @@ class Connection:
         self.bitRate = 0
         self.latency = 0.0
         self.snr = 0.0
+        self.allocated = 0.0
         self.path = []
     
     def setLatency(self, latency : float) -> None:
@@ -24,3 +25,7 @@ class Connection:
 
     def setPath(self, path) -> None:
         self.path = path
+
+    def allocate(self, bitRate) -> None:
+        if(self.allocated + bitRate <= self.bitRate):
+            self.allocated += bitRate

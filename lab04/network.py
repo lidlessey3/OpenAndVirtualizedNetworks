@@ -16,7 +16,7 @@ import constants as my_cs
 
 class Network:
     
-    def __init__(self, path : str, channels : int = 10) -> None:
+    def __init__(self, path : str, channels : int = 10, transceiver : str = "fixed-rate") -> None:
         input_file = open(path)
         data = json.load(input_file)
         input_file.close()
@@ -24,6 +24,7 @@ class Network:
         self.lines = {}
         self.channels = channels
         self.time = 0
+        self.request_matrix = None
         
         for key,value in data.items():
             tmp_data = {
@@ -32,7 +33,7 @@ class Network:
                 "connected_nodes" : value["connected_nodes"]
             }
             if("transceiver" not in value):
-                tmp_data['transceiver'] = "fixed-rate"
+                tmp_data['transceiver'] = transceiver
             else:
                 tmp_data['transceiver'] = value['transceiver']
             self.nodes[key] = Node(tmp_data)
@@ -45,12 +46,12 @@ class Network:
         self.create_weighted_paths_and_route_space()
         
         #creating a logger
-        self.logger = DataFrame(columns=["epoch time", "path", "Channel ID", "bit rate"])
+        self.logger = DataFrame(columns=["epoch time", "path", "Channel ID", "bit rate", "allocated bit rate"])
 
     def update_logger(self, con : Connection) -> None:
         time = self.time# current time
         self.time+=1    # advance the time
-        new_data={"epoch time":time, "path":self.path_to_string(con.path), "Channel ID":con.channel, "bit rate":con.bitRate}
+        new_data={"epoch time":time, "path":self.path_to_string(con.path), "Channel ID":con.channel, "bit rate":con.bitRate, "allocated bit rate":con.allocated}
         self.logger.loc[time] = new_data # add the line to the panda data frame
 
     def recursive_path(self, start : str, end : str, forbidden : list, all_path : list) -> list:
@@ -80,7 +81,7 @@ class Network:
 
     def propagate(self, signal: Signal_information) -> Signal_information:
         node = signal.update_path()
-        self.nodes[node].propagate(signal, True)
+        self.nodes[node].propagate(signal)
         return signal
 
     def recursive_check_path(self, path : list, pos : int, channel : int = 0) -> bool: # recursively checks if the path is free or not
@@ -235,6 +236,10 @@ class Network:
             return 0
 
     def manageTrafficMatrix(self, Tm) -> None:
+        if(self.request_matrix is None):
+            self.request_matrix = np.matrix(Tm)
+
+        refused = 0
         while((Tm != np.zeros((len(self.nodes), len(self.nodes)))).any()): # while there is at least some request left
             nodes=[0,0]
             while(Tm[nodes[0], int(nodes[1])] <= 0):    # select random nodes
@@ -253,23 +258,29 @@ class Network:
 
             # streaming until the required traffic is allocated
             self.stream([con], False)
-            while(con.bitRate < Tm[nodes[0], nodes[1]]):
+            while(con.bitRate < Tm[nodes[0], nodes[1]] and con.bitRate != 0):
                 Tm[nodes[0], nodes[1]] -= con.bitRate
-                if(con.bitRate == 0):   # if the connection is refused terminate
-                    return
+                con.allocate(con.bitRate)
                 self.stream([con], False)
-            if(Tm[nodes[0], nodes[1]] > 0):
+            if(Tm[nodes[0], nodes[1]] > 0 and con.bitRate != 0):
+                con.allocate(Tm[nodes[0], nodes[1]])
                 Tm[nodes[0], nodes[1]] = 0
+            if(con.bitRate == 0):   # if the connection was refused register it
+                refused += 1
+                    
+            if(refused > 100): # if it is no longer possible to allocate a connection terminate
+                return
 
     def strong_failure(self, line : str) -> None:
         self.lines[line].beBrocken()
 
     def traffic_recovery(self) -> None:
+        Tm = np.zeros((len(self.nodes), len(self.nodes)))
         for t in range(self.time):
             row = self.logger.loc[self.logger["epoch time"] == t]
 
             if(len(row) == 0):  # if this row was already damaged and recovered I skip it
-                break
+                continue
 
             path = str(row["path"].iloc[0]).split("->")  # from string to path list
             
@@ -294,24 +305,48 @@ class Network:
 
                 # now creating the new connection to satisfy the same bitrate demand
                 labels = [label for label in self.nodes.keys()]
-                Tm = np.zeros((len(self.nodes), len(self.nodes)))
 
-                Tm[labels.index(path[0]), labels.index(path[-1])] = row["bit rate"].iloc[0] # same bitrate demand as previously allocated
-                self.manageTrafficMatrix(Tm)
-
-                if((Tm == np.zeros((len(self.nodes), len(self.nodes)))).all()):
-                    print("Successufully reconected " + row["path"].iloc[0] + " usign " + self.logger.loc[self.time-1, "path"]+ ".")
-                    print("Using channel " + str(self.logger.loc[self.time-1, "Channel ID"]))
-                else:
-                    print("Failed to reconnect " + row["path"].iloc[0])
-
+                Tm[labels.index(path[0]), labels.index(path[-1])] += row["allocated bit rate"].iloc[0] # same bitrate demand as previously allocated
+                
                 self.logger.drop(row.index, inplace=True)   # remove the line after it has been fixed
+        
+        self.manageTrafficMatrix(Tm)    # reallocate all the traffic
 
-def calculate_average_speed(speeds : list) -> float:
+    def total_allocated_capacity(self):
+        total = 0.0
+        brocken_lines = 0
+        for line in self.lines.values():
+            for channel in line.state:
+                if(not channel):
+                    total+=1
+            if(not line.in_service):
+                brocken_lines += 1
+        
+        return total / (self.channels * (len(self.lines) - brocken_lines)) * 100
+
+    def average_snr(self) -> float:
+        total = 0.0
+        for t in range(self.time):
+            row = self.logger.loc[self.logger["epoch time"] == t]
+            if(len(row) == 0):
+                continue
+            total+=self.weighted_paths.loc[row["path"].iloc[0], "snr"]
+        return total/len(self.logger)
+
+    def average_latency(self) -> float:
+        total = 0.0
+        for t in range(self.time):
+            row = self.logger.loc[self.logger["epoch time"] == t]
+            if(len(row) == 0):
+                continue
+            total+=self.weighted_paths.loc[row["path"].iloc[0], "latency"]
+        return total/len(self.logger)
+
+def calculate_average(elems : list) -> float:
     result = 0.0
-    for speed in speeds:
-        result+=speed
-    return result/len(speeds)
+    for elem in elems:
+        result+=elem
+    return result/len(elems)
 
 def count_false(status : list) -> int:
     result = 0
@@ -334,7 +369,9 @@ if __name__=="__main__":
     net.stream(cons)
     fig, [plot_latency, plot_snr] = plt.subplots(2)
     plot_latency.plot(list(map(lambda x:x.latency, cons)))
+    plot_latency.set_title("Connection latency")
     plot_snr.plot(list(map(lambda x:x.snr, cons)))
+    plot_snr.set_title("Connection GSNR")
 
     plt.show()
 
@@ -349,18 +386,23 @@ if __name__=="__main__":
         speed_flex_a.append(net.calculate_bit_rate_actual(snr, "flex-rate")/1e9)
         speed_shannon_a.append(net.calculate_bit_rate_actual(snr, "shannon")/1e9)
     fig, plot_speed = plt.subplots()
-    plot_speed.plot(db_a, speed_fixed_a)
-    plot_speed.plot(db_a, speed_flex_a)
-    plot_speed.plot(db_a, speed_shannon_a)
+    plot_speed.plot(db_a, speed_fixed_a, label="Fixed Speed")
+    plot_speed.plot(db_a, speed_flex_a, label="Flex Speed")
+    plot_speed.plot(db_a, speed_shannon_a, label="Shannon Speed")
+
+    plot_speed.legend()
+
+    plot_speed.set_xlabel("GSNR [dB]")
+    plot_speed.set_ylabel("Speed [Gb/s]")
 
     plt.show()
 
     plt.hist(list(map(lambda x:x.bitRate, cons)), bins=2)
     plt.show()
 
-    fixedRateNet = Network("lab04/nodes_full_fixed_rate.json")
-    flexRateNet = Network("lab04/nodes_full_flex_rate.json")
-    shannonNet = Network("lab04/nodes_full_shannon.json")
+    fixedRateNet = Network("lab04/269609.json", 10, "fixed-rate")#Network("lab04/nodes_full_fixed_rate.json")
+    flexRateNet = Network("lab04/269609.json", 10, "flex-rate")#Network("lab04/nodes_full_flex_rate.json")
+    shannonNet = Network("lab04/269609.json", 10, "shannon")#Network("lab04/nodes_full_shannon.json")
 
     nodes = list(fixedRateNet.nodes.keys())
     fixedCons = []
@@ -391,13 +433,22 @@ if __name__=="__main__":
     flexRateNet.stream(flexCons, False)
     shannonNet.stream(shannonCons, False)
 
-    plt.hist(list(map(lambda x:x.bitRate, fixedCons)), bins=2)
+    plt.hist(list(map(lambda x:x.bitRate/1e9, fixedCons)), bins=2)
+    plt.xlabel("bit Rate Gb/s")
+    plt.ylabel("Connections")
+    plt.title("Fixed-rate transceiver")
     plt.show()
 
-    plt.hist(list(map(lambda x:x.bitRate, flexCons)), bins=4)
+    plt.hist(list(map(lambda x:x.bitRate/1e9, flexCons)), bins=4)
+    plt.xlabel("bit Rate Gb/s")
+    plt.ylabel("Connections")
+    plt.title("Flex-rate transceiver")
     plt.show()
 
-    plt.hist(list(map(lambda x:x.bitRate, shannonCons)), bins=20)
+    plt.hist(list(map(lambda x:x.bitRate/1e9, shannonCons)), bins=20)
+    plt.xlabel("bit Rate Gb/s")
+    plt.ylabel("Connections")
+    plt.title("shannon transceiver")
     plt.show()
 
     # only maintain accepted connections
@@ -405,36 +456,79 @@ if __name__=="__main__":
     flexCons = [con for con in flexCons if con.bitRate > 0]
     shannonCons = [con for con in shannonCons if con.bitRate > 0]
 
-    print("Average value for fixed transceivers is: " + str(calculate_average_speed([con.bitRate for con in fixedCons])))
-    print("Average value for flex transceivers is: " + str(calculate_average_speed([con.bitRate for con in flexCons])))
-    print("Average value for shannon transceivers is: " + str(calculate_average_speed([con.bitRate for con in shannonCons])))
+    # print average speeds
+    print("Average speed for fixed transceivers is: " + str(calculate_average([con.bitRate for con in fixedCons])))
+    print("Average speed for flex transceivers is: " + str(calculate_average([con.bitRate for con in flexCons])))
+    print("Average speed for shannon transceivers is: " + str(calculate_average([con.bitRate for con in shannonCons])))
 
-    # begging the creation of the traffic matrix
+    print("Average snr for fixed transceivers is: " + str(calculate_average([con.snr for con in fixedCons])))
+    print("Average snr for flex transceivers is: " + str(calculate_average([con.snr for con in flexCons])))
+    print("Average snr for shannon transceivers is: " + str(calculate_average([con.snr for con in shannonCons])))
 
-    net=Network("lab04/269609.json", 10) # resetting the network
+    print("Average latency for fixed transceivers is: " + str(calculate_average([con.latency for con in fixedCons])))
+    print("Average latency for flex transceivers is: " + str(calculate_average([con.latency for con in flexCons])))
+    print("Average latency for shannon transceivers is: " + str(calculate_average([con.latency for con in shannonCons])))
 
-    M = 2.8
+    input()
 
-    #Tm = np.full((len(net.nodes), len(net.nodes)), 100e9 * M)  # create an empty matrix
-    Tm = np.random.randn(len(net.nodes)**2) * 100e9 * M
-    Tm[Tm < 0] = 0
-    Tm = np.reshape(Tm, (len(net.nodes), len(net.nodes)))
-    np.fill_diagonal(Tm, 0.0)
-    print(Tm)
+    transceivers = ["fixed-rate", "flex-rate", "shannon"]
 
-    net.manageTrafficMatrix(Tm)
-    print(Tm)
+    snr_histories = {"fixed-rate": [], "flex-rate":[], "shannon":[]}
+    snr_histories_after_recovery = {"fixed-rate": [], "flex-rate":[], "shannon":[]}
 
-    best = None
+    for transceiver in transceivers:
+        allocated_capacity_history=[]
+        allocated_capacity_after_recovery_history = []
+        for m in range(1, 80):
+            # begging the creation of the traffic matrix
+            net=Network("lab04/269609.json", 10, transceiver) # resetting the network
 
-    for line in net.lines.values():
-        if best is None:
-            best = line
-        elif (count_false(line.state) > count_false(best.state)):
-            best = line
+            Tm = np.random.randn(len(net.nodes)**2) * 100e9 * m
+            Tm = np.full(len(net.nodes)**2, 100e9 * m)
+            Tm[Tm < 0] = 0
+            Tm = np.reshape(Tm, (len(net.nodes), len(net.nodes)))
+            np.fill_diagonal(Tm, 0.0)
+            print(Tm)
+
+            net.manageTrafficMatrix(Tm)
+            print(Tm)
+
+            best = None
+
+            for line in net.lines.values():
+                if best is None:
+                    best = line
+                elif (count_false(line.state) > count_false(best.state)):
+                    best = line
+            
+            allocated_capacity_history.append(net.total_allocated_capacity())
+            snr_histories[transceiver].append(net.average_snr())
     
-    net.strong_failure(best.label)
+            net.strong_failure(best.label)
 
-    print("Breaking line " + best.label)
+            print("Breaking line " + best.label)
 
-    net.traffic_recovery()
+            net.traffic_recovery()
+
+            allocated_capacity_after_recovery_history.append(net.total_allocated_capacity())
+            snr_histories_after_recovery[transceiver].append(net.average_snr())
+        
+        plt.plot(allocated_capacity_history, label="before recovery")
+        plt.plot(allocated_capacity_after_recovery_history, label="after recovery")
+
+        plt.legend()
+
+        plt.title(transceiver + " total allocated capacity")
+
+        plt.show()
+
+        plt.plot(snr_histories[transceiver], label="snr before recovery")
+        plt.plot(snr_histories_after_recovery[transceiver], label="snr after recovery")
+
+        plt.legend()
+
+        plt.title(transceiver + " average snr")
+        plt.xlabel("m")
+        plt.ylabel("average snr [dB]")
+
+        plt.show()

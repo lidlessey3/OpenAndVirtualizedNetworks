@@ -45,7 +45,7 @@ class Line:
     def noise_generation(self, signal_power : float) -> float:
         ase = self.ase_generation()
         nli = self.nli_generation(signal_power)
-        return self.ase_generation() + self.nli_generation(signal_power)
+        return ase + nli
 
     def latency_generation(self) -> float:
         speed = 2/3 * cs.c # m/s using the precise constant now
