@@ -2,7 +2,6 @@ from cmath import sqrt
 import json
 from math import floor
 import random
-from unittest import result
 import numpy as np
 import scipy.special as sp
 from lightpath import Lightpath
