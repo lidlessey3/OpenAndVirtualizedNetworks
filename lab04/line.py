@@ -86,7 +86,7 @@ class Line:
 
     def optimized_launch_power(self) -> float: # slide 31 of OLS(8)
         l = np.abs(20 * np.log10(cs.e)/ self.alpha)
-        return (80e3*self.noise_figure*(cs.h * my_cs.BN * self.f) / (2*my_cs.BN*self.calculate_NLI_coeff()))**(1/3)
+        return (self.length*self.noise_figure*(cs.h * my_cs.BN * self.f) / (2*my_cs.BN*self.calculate_NLI_coeff()))**(1/3)
     
     def calculate_NLI_coeff(self) -> float: # slide 16 of OLS(8)
         if (self.NLI_coeff == -1):  # since this number does not change do the calculation only once
